@@ -6,18 +6,54 @@ import { In, LessThanOrEqual, Not, Repository } from 'typeorm';
 import { MockSrShipment } from './entities/mock-sr-shipment.entity';
 import { MockShiprocketService } from './mock-shiprocket.service';
 
-const AUTO_DELIVER_AFTER_MS = 5 * 60 * 1000;
+const AUTO_DELIVER_AFTER_MS = 2 * 60 * 1000;
 
-const TERMINAL_STATUSES = [
+const FORWARD_HAPPY_PATH = [
+  'PICKED UP',
+  'IN TRANSIT',
+  'OUT FOR DELIVERY',
   'DELIVERED',
-  'CANCELLED',
-  'RETURNED',
-  'RTO DELIVERED',
+] as const;
+
+const REVERSE_HAPPY_PATH = [
+  'RETURN PICKED UP',
+  'RETURN IN TRANSIT',
   'RETURN DELIVERED',
 ] as const;
 
+const SKIP_STATUSES = [
+  'DELIVERED',
+  'RETURN DELIVERED',
+  'CANCELLED',
+  'FAILED DELIVERY',
+  'RTO INITIATED',
+  'RTO DELIVERED',
+  'RETURNED',
+  'QC FAILED',
+] as const;
+
 /**
- * Auto-DELIVERED mock forward shipments 5 minutes after create.
+ * Next happy-path scan, or null when already terminal on that path.
+ * NEW / AWB ASSIGNED / PICKUP REQUESTED start at the first scan.
+ * @param {Pick<MockSrShipment, 'status' | 'isReturn'>} row - Mock shipment
+ * @returns {string | null} Status to post, or null to skip
+ */
+export function nextHappyStatus(
+  row: Pick<MockSrShipment, 'status' | 'isReturn'>,
+): string | null {
+  const path = row.isReturn ? REVERSE_HAPPY_PATH : FORWARD_HAPPY_PATH;
+  const idx = (path as readonly string[]).indexOf(row.status);
+  if (idx === -1) {
+    return path[0];
+  }
+  if (idx >= path.length - 1) {
+    return null;
+  }
+  return path[idx + 1];
+}
+
+/**
+ * Walks aged mock shipments one happy-path scan per minute.
  * Reuses advanceStatus so Creato webhook path stays one.
  */
 @Injectable()
@@ -59,26 +95,31 @@ export class AutoDeliverCron {
       const cutoff = new Date(Date.now() - AUTO_DELIVER_AFTER_MS);
       const rows = await this.shipments.find({
         where: {
-          isReturn: false,
           createdAt: LessThanOrEqual(cutoff),
-          status: Not(In([...TERMINAL_STATUSES])),
+          status: Not(In([...SKIP_STATUSES])),
         },
       });
+      let advanced = 0;
       for (const row of rows) {
+        const next = nextHappyStatus(row);
+        if (!next) {
+          continue;
+        }
         try {
           await this.mock.advanceStatus({
             shipment_id: row.id,
-            current_status: 'DELIVERED',
+            current_status: next,
           });
+          advanced += 1;
         } catch (error) {
           this.logger.error(
-            `Auto-deliver failed for shipment ${row.id}`,
+            `Auto-advance failed for shipment ${row.id}`,
             error instanceof Error ? error.stack : undefined,
           );
         }
       }
-      if (rows.length > 0) {
-        this.logger.log(`Auto-delivered ${rows.length} mock shipment(s)`);
+      if (advanced > 0) {
+        this.logger.log(`Auto-advanced ${advanced} mock shipment(s)`);
       }
     } finally {
       this.isRunning = false;

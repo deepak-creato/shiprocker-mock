@@ -50,10 +50,15 @@ The mock POSTs
 `/api/v1/shipping/webhooks/tracking-updates`
 so `processShiprocketWebhook` / `markDeliveredInternal` run for real.
 
-## Auto-deliver
+## Auto-advance
 
-A minute cron delivers forward mock shipments whose `created_at` is at least
-5 minutes old (`SHIPROCKET_MOCK_AUTO_DELIVER=true` by default).
+A minute cron walks happy-path scans on mock shipments whose `created_at` is
+at least 2 minutes old (`SHIPROCKET_MOCK_AUTO_DELIVER=true` by default).
+One status per tick.
+
+Forward: `PICKED UP` → `IN TRANSIT` → `OUT FOR DELIVERY` → `DELIVERED`.
+Reverse: `RETURN PICKED UP` → `RETURN IN TRANSIT` → `RETURN DELIVERED`.
 
 Set `SHIPROCKET_MOCK_AUTO_DELIVER=false` to keep manual `/dev/advance-status`
-only. Reverse (`is_return`) and already-terminal rows are skipped.
+only. Negative statuses (`FAILED DELIVERY`, `RTO INITIATED`, `RTO DELIVERED`,
+`RETURNED`, `QC FAILED`) and already-terminal rows are skipped.
