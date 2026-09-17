@@ -1,13 +1,20 @@
 import {
   Body,
+  CallHandler,
   Controller,
+  ExecutionContext,
   Get,
+  Injectable,
+  Logger,
+  NestInterceptor,
   Param,
   Post,
   Query,
+  UseInterceptors,
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
+import { Observable, tap } from 'rxjs';
 import type {
   ShiprocketAddPickupRequest,
   ShiprocketAddPickupResponse,
@@ -33,10 +40,40 @@ import type {
 } from './shiprocket.types';
 import { MockShiprocketService } from './mock-shiprocket.service';
 
+@Injectable()
+class RequestResponseLogInterceptor implements NestInterceptor {
+  private readonly logger = new Logger('MockShiprocketController');
+
+  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
+    const req = context.switchToHttp().getRequest<{
+      method: string;
+      url: string;
+      body?: unknown;
+      query?: unknown;
+      params?: unknown;
+    }>();
+    this.logger.log(
+      `req ${req.method} ${req.url} ${JSON.stringify({
+        params: req.params ?? {},
+        query: req.query ?? {},
+        body: req.body ?? {},
+      })}`,
+    );
+    return next.handle().pipe(
+      tap((response: unknown) => {
+        this.logger.log(
+          `res ${req.method} ${req.url} ${JSON.stringify(response)}`,
+        );
+      }),
+    );
+  }
+}
+
 /**
  * Clones Shiprocket `/v1/external` paths used by ShiprocketService.
  */
 @Controller('v1/external')
+@UseInterceptors(RequestResponseLogInterceptor)
 @UsePipes(
   new ValidationPipe({
     transform: true,
