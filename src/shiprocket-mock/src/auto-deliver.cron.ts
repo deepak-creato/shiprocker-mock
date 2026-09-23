@@ -6,7 +6,8 @@ import { In, LessThanOrEqual, Not, Repository } from 'typeorm';
 import { MockSrShipment } from './entities/mock-sr-shipment.entity';
 import { MockShiprocketService } from './mock-shiprocket.service';
 
-const AUTO_DELIVER_AFTER_MS = 2 * 60 * 1000;
+const DEFAULT_AFTER_MIN = 1;
+const MS_PER_MIN = 60 * 1000;
 
 const FORWARD_HAPPY_PATH = [
   'PICKED UP',
@@ -64,7 +65,7 @@ export class AutoDeliverCron {
   /**
    * @param {Repository<MockSrShipment>} shipments - Mock shipment rows
    * @param {MockShiprocketService} mock - Status + webhook
-   * @param {ConfigService} config - Enable flag
+   * @param {ConfigService} config - Enable flag and first-scan delay
    */
   constructor(
     @InjectRepository(MockSrShipment)
@@ -92,7 +93,12 @@ export class AutoDeliverCron {
     }
     this.isRunning = true;
     try {
-      const cutoff = new Date(Date.now() - AUTO_DELIVER_AFTER_MS);
+      const afterMin =
+        this.config.get<number>(
+          'app.shiprocket_mock_auto_event_after_min',
+          DEFAULT_AFTER_MIN,
+        ) ?? DEFAULT_AFTER_MIN;
+      const cutoff = new Date(Date.now() - afterMin * MS_PER_MIN);
       const rows = await this.shipments.find({
         where: {
           createdAt: LessThanOrEqual(cutoff),

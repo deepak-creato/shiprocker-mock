@@ -53,8 +53,8 @@ so `processShiprocketWebhook` / `markDeliveredInternal` run for real.
 ## Auto-advance
 
 A minute cron walks happy-path scans on mock shipments whose `created_at` is
-at least 2 minutes old (`SHIPROCKET_MOCK_AUTO_DELIVER=true` by default).
-One status per tick.
+at least `SHIPROCKET_MOCK_AUTO_EVENT_AFTER_MIN` minutes old (default `1`).
+One status per tick. `SHIPROCKET_MOCK_AUTO_DELIVER=true` by default.
 
 Forward: `PICKED UP` → `IN TRANSIT` → `OUT FOR DELIVERY` → `DELIVERED`.
 Reverse: `RETURN PICKED UP` → `RETURN IN TRANSIT` → `RETURN DELIVERED`.
